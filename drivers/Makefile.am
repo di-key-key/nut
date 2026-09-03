@@ -342,7 +342,7 @@ USBHID_UPS_SUBDRIVERS = apc-hid.c arduino-hid.c belkin-hid.c cps-hid.c explore-h
  liebert-hid.c mge-hid.c powercom-hid.c tripplite-hid.c idowell-hid.c \
  openups-hid.c powervar-hid.c delta_ups-hid.c ecoflow-hid.c ever-hid.c \
  legrand-hid.c salicru-hid.c
-usbhid_ups_SOURCES = usbhid-ups.c libhid.c hidparser.c $(USBHID_UPS_SUBDRIVERS)
+usbhid_ups_SOURCES = usbhid-ups.c libhid.c hidparser.c cps-ncl.c $(USBHID_UPS_SUBDRIVERS)
 usbhid_ups_LDADD = $(LDADD_DRIVERS_LIBUSB)
 
 powervar_cx_usb_SOURCES = powervar_cx_usb.c powervar_cx.c
@@ -530,7 +530,7 @@ nutdrv_qx_SOURCES += $(NUTDRV_QX_SUBDRIVERS)
 
 dist_noinst_HEADERS = \
  apc_modbus.h apc-mib.h apc-iem-mib.h apc-hid.h arduino-hid.h baytech-mib.h baytech-rpc3nc-mib.h bcmxcp.h bcmxcp_ser.h	\
- bcmxcp_io.h belkin.h belkin-hid.h bestpower-mib.h blazer.h cps-hid.h dstate.h	\
+ bcmxcp_io.h belkin.h belkin-hid.h bestpower-mib.h blazer.h cps-hid.h cps-ncl.h dstate.h	\
  dummy-ups.h explore-hid.h failover.h gamatronic.h genericups.h	\
  generic_gpio_common.h generic_gpio_libgpiod.h	\
  hidparser.h hidtypes.h ietf-mib.h libhid.h libshut.h nut_libusb.h libwinhid.h liebert-hid.h	\
