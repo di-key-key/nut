@@ -1,0 +1,227 @@
+CyberPower CP1200EIPFCRM2U NCL bank support
+============================================
+
+OVERVIEW
+--------
+
+The CyberPower CP1200EIPFCRM2U exposes its normal UPS telemetry through the
+USB HID Power Device Class and is handled by the existing `cps-hid` subdriver.
+The switchable Non-Critical Load (NCL) bank, however, is controlled through a
+separate CyberPower-specific USB command channel which is not represented by
+the standard HID mappings.
+
+This implementation adds that NCL channel to `usbhid-ups` while leaving the
+existing CyberPower HID telemetry path unchanged.  The bank is exposed through
+standard NUT `outlet.*` variables and instant commands.
+
+IMPLEMENTATION STATUS
+---------------------
+
+The code in this branch is based on NUT v2.8.5 and is build-tested with a
+strict USB configuration (`--enable-warnings --enable-Werror`).
+
+The protocol details documented below were reverse-engineered from CyberPower
+PowerPanel USB traffic and validated against a physical CP1200EIPFCRM2U with an
+earlier NUT v2.8.1 implementation.  The v2.8.5 port must be revalidated on the
+physical UPS before it is presented as hardware-tested for this NUT release.
+
+DEVICE SCOPE
+------------
+
+The proprietary NCL path is enabled only when all of the following properties
+match:
+
+[cols="1,2"]
+|===
+|Property |Required value
+
+|USB vendor ID
+|`0x0764`
+
+|USB product ID
+|`0x0601`
+
+|USB product string (`iProduct`)
+|`CP1200EIPFCRM2U`
+|===
+
+Matching the product string as well as VID:PID is intentional.  CyberPower
+uses the same USB identifiers for multiple product families, and the
+proprietary NCL protocol must not be enabled for an unverified model merely
+because it reports `0764:0601`.
+
+USB COMMAND CHANNEL
+-------------------
+
+The NCL protocol uses feature reports to activate the proprietary command
+channel and interrupt transfers for commands and replies.
+
+[cols="2,2,3"]
+|===
+|Purpose |USB value |Observed behavior
+
+|Enable command channel
+|Feature report `0x25`
+|Set two bytes: `25 01`
+
+|Check command channel
+|Feature report `0x2c`
+|Ready response: `2c 01`
+
+|Command request
+|Report `0x29`
+|Sent to interrupt OUT endpoint `0x02`
+
+|Command reply
+|Report `0x28`
+|Returned through the interrupt input path
+|===
+
+A command request is a 64-byte packet.  Byte 0 contains report ID `0x29`,
+byte 1 contains the command length, and the command bytes begin at byte 2.
+Unused bytes are zero-filled.
+
+The implementation waits for report `0x28` when reading a command reply.
+Ordinary HID notifications can arrive before the proprietary reply and are
+therefore ignored by this command exchange.
+
+OBSERVED COMMANDS
+-----------------
+
+[cols="1,2"]
+|===
+|Command |Function
+
+|`D\r`
+|Read proprietary device/NCL status
+
+|`S0:2\r`
+|Turn NCL Bank 1 off immediately
+
+|`W0:2\r`
+|Turn NCL Bank 1 on immediately
+|===
+
+Successful switching commands return the payload `#0\r`.
+
+A delayed-on form, `W2:2\r`, was also observed during reverse engineering,
+but it is deliberately not exposed by this implementation.  Only the
+immediate on/off operations required for the NUT outlet interface are included
+until additional semantics and hardware behavior are sufficiently verified.
+
+NCL STATE
+---------
+
+The response to `D\r` ends in CR.  On the tested CP1200EIPFCRM2U, the
+least-significant bit of the byte immediately before that CR represents NCL
+Bank 1 state:
+
+----
+bit 0 = 0  -> NCL Bank 1 off
+bit 0 = 1  -> NCL Bank 1 on
+----
+
+Observed status bytes included `0x80` for off and `0x81` for on.  The driver
+therefore interprets only bit 0 and does not assign meaning to the remaining
+bits.
+
+NUT INTERFACE
+-------------
+
+The implementation publishes one switchable outlet object:
+
+----
+outlet.count: 1
+outlet.1.name: NCL Bank 1
+outlet.1.desc: NCL Bank 1
+outlet.1.switchable: yes
+outlet.1.status: on|off
+----
+
+and adds these instant commands:
+
+----
+outlet.1.load.on
+outlet.1.load.off
+----
+
+`outlet.count = 1` describes one independently switchable NCL *bank*, not one
+physical receptacle.  The CP1200EIPFCRM2U groups its NCL receptacles behind
+that bank and they switch together.
+
+COMMAND VERIFICATION
+--------------------
+
+The `#0\r` acknowledgement means that the UPS accepted a switching command;
+it does not prove that the relay has already reached the requested state.
+For that reason, `outlet.1.load.on` and `outlet.1.load.off` do not return
+`STAT_INSTCMD_HANDLED` immediately after ACK.
+
+After a successful acknowledgement, the driver polls `D\r` and verifies the
+physical NCL state.  It retries up to 12 times with 250 ms between attempts.
+If the requested state is not observed, the command is reported as failed.
+
+BACKEND LIMITATION
+------------------
+
+NCL control currently requires the libusb backend.  The implementation needs a
+raw interrupt OUT transfer to endpoint `0x02`; the native Windows HID backend
+used by the `winhid` option does not currently expose an equivalent operation.
+
+The standard CyberPower HID telemetry remains independent of this extension.
+If the proprietary path is unavailable, the driver must not enable the NCL
+outlet commands for another backend or another UPS model.
+
+BUILD VALIDATION
+----------------
+
+A focused strict build can be performed with:
+
+----
+./autogen.sh
+./configure --with-usb --enable-warnings --enable-Werror
+make -C drivers -j2 usbhid-ups
+----
+
+Before hardware validation, also check the feature diff for whitespace errors:
+
+----
+git diff --check v2.8.5..HEAD -- drivers
+----
+
+HARDWARE VALIDATION
+-------------------
+
+Use a non-critical load connected to the NCL bank for the first test.  The
+minimum validation sequence is:
+
+. Start `usbhid-ups` against the CP1200EIPFCRM2U using the libusb backend.
+. Confirm that normal HID telemetry remains available through `upsc`.
+. Confirm the published outlet metadata and current state:
++
+----
+upsc UPS_NAME | grep '^outlet\.'
+----
+. Confirm the instant commands are advertised:
++
+----
+upscmd -l UPS_NAME | grep '^outlet\.1\.'
+----
+. Execute `outlet.1.load.off` and verify both the reported state and the
+  physical NCL load.
+. Execute `outlet.1.load.on` and perform the same verification.
+. Repeat the state read after a driver restart/reconnect to verify proprietary
+  channel reinitialization.
+. Verify that ordinary UPS telemetry and status transitions remain correct
+  while NCL polling is enabled.
+
+Do not treat successful compilation or a `#0\r` ACK alone as hardware
+validation.
+
+UPSTREAM CONTEXT
+----------------
+
+Support work for this model is related to Network UPS Tools GitHub issue
+`networkupstools/nut#3134` (CP1200EIPFCRM2U).  Any upstream proposal should
+state separately which protocol observations were made on physical hardware
+and which NUT release/commit was used for the final hardware validation.

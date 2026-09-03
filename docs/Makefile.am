@@ -134,7 +134,8 @@ CABLES_IMAGES = images/cables/73-0724.png images/cables/940-0024C.jpg \
 ALL_TXT_SRC = nut-names.txt daisychain.txt \
  $(USER_MANUAL_DEPS) $(DEVELOPER_GUIDE_DEPS) \
  $(CABLES_DEPS) $(QA_GUIDE_DEPS) FAQ.txt packager-guide.txt snmp.txt \
- release-notes.txt ChangeLog.txt solaris-usb.txt
+ release-notes.txt ChangeLog.txt solaris-usb.txt \
+ cyberpower-cp1200eipfcrm2u-ncl.txt
 
 ASPELL_FILTER_PATH = @ASPELL_FILTER_PATH@
 # NOTE: This can be set by caller such as nut-website builder:
