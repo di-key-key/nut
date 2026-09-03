@@ -1,0 +1,46 @@
+name: temporary CP1200 final QA
+
+on:
+  push:
+    branches:
+      - tmp-cp1200-build
+
+permissions:
+  contents: read
+
+jobs:
+  final-qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            autoconf \
+            automake \
+            libtool \
+            pkg-config \
+            libusb-1.0-0-dev \
+            python3
+
+      - name: Check complete feature diff
+        run: git diff --check 0e051f9f6853e9ae0087b388b70840c9651a5eed..HEAD
+
+      - name: Generate build system
+        run: ./autogen.sh
+
+      - name: Configure strict USB build
+        run: ./configure --with-usb --enable-warnings --enable-Werror
+
+      - name: Build usbhid-ups
+        run: make -C drivers -j2 usbhid-ups
+
+      - name: Verify protocol note is distributed
+        run: |
+          grep -F 'cyberpower-cp1200eipfcrm2u-ncl.txt' docs/Makefile.am
+          test -s docs/cyberpower-cp1200eipfcrm2u-ncl.txt
