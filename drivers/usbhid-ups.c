@@ -58,6 +58,7 @@
 #	include "arduino-hid.h"
 #	include "belkin-hid.h"
 #	include "cps-hid.h"
+#	include "cps-ncl.h"
 #	include "delta_ups-hid.h"
 #	include "ecoflow-hid.h"
 #	include "ever-hid.h"
@@ -1029,6 +1030,16 @@ int instcmd(const char *cmdname, const char *extradata)
 
 	upsdebug_INSTCMD_STARTING(cmdname, extradata);
 
+#if !((defined SHUT_MODE) && SHUT_MODE)
+	if (subdriver == &cps_subdriver) {
+		int cps_ret = cps_ncl_instcmd(cmdname, extradata);
+
+		if (cps_ret != STAT_INSTCMD_UNKNOWN) {
+			return cps_ret;
+		}
+	}
+#endif	/* !SHUT_MODE => USB */
+
 	/* Retrieve and check netvar & item_path */
 	hidups_item = find_nut_info(cmdname);
 
@@ -1416,6 +1427,12 @@ void upsdrv_updateinfo(void)
 			hd = NULL;
 			return;
 		}
+
+#if !((defined SHUT_MODE) && SHUT_MODE)
+		if (subdriver == &cps_subdriver) {
+			cps_ncl_initinfo(hd);
+		}
+#endif	/* !SHUT_MODE => USB */
 	}
 #ifdef DEBUG
 	interval();
@@ -1525,6 +1542,12 @@ void upsdrv_updateinfo(void)
 
 		if (hid_ups_walk(HU_WALKMODE_FULL_UPDATE) == FALSE)
 			return;
+
+#if !((defined SHUT_MODE) && SHUT_MODE)
+		if (subdriver == &cps_subdriver) {
+			cps_ncl_updateinfo();
+		}
+#endif	/* !SHUT_MODE => USB */
 
 		lastpoll = now;
 		data_has_changed = FALSE;
@@ -1681,6 +1704,12 @@ void upsdrv_initinfo(void)
 	/* install handlers */
 	upsh.setvar = setvar;
 	upsh.instcmd = instcmd;
+
+#if !((defined SHUT_MODE) && SHUT_MODE)
+	if (subdriver == &cps_subdriver) {
+		cps_ncl_initinfo(hd);
+	}
+#endif	/* !SHUT_MODE => USB */
 }
 
 void upsdrv_initups(void)
